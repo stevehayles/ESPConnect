@@ -403,6 +403,11 @@ const JEDEC_FLASH_PARTS = {
   },
 };
 
+const VENDOR_ALIASES = {
+  AP_3v3: 'AP Memory (3.3 V)',
+  AP_1v8: 'AP Memory (1.8 V)',
+};
+
 const FACT_ICONS = {
   Package: 'mdi-package-variant-closed',
   Revision: 'mdi-update',
@@ -426,6 +431,20 @@ function formatBytes(bytes) {
   }
   const formatted = value % 1 === 0 ? value.toFixed(0) : value.toFixed(1);
   return `${formatted} ${units[idx]}`;
+}
+
+function formatVendorLabel(label) {
+  if (!label) return label;
+  return VENDOR_ALIASES[label] ?? label.replace(/_/g, ' ');
+}
+
+function humanizeFeature(feature) {
+  if (typeof feature !== 'string') return feature;
+  let text = feature;
+  for (const [code, friendly] of Object.entries(VENDOR_ALIASES)) {
+    text = text.replace(new RegExp(code, 'g'), friendly);
+  }
+  return text;
 }
 
 function resolvePackageLabel(chipKey, pkgVersion, chipRevision) {
@@ -471,7 +490,8 @@ function cleanEmbeddedFeature(feature, keyword) {
 function resolveEmbeddedFlash(chipKey, flashCap, flashVendor, featureList) {
   const map = EMBEDDED_FLASH_CAPACITY[chipKey];
   if (map && typeof flashCap === 'number' && !Number.isNaN(flashCap) && map[flashCap]) {
-    return `${map[flashCap]}${flashVendor ? ` (${flashVendor})` : ''}`;
+    const vendorLabel = formatVendorLabel(flashVendor);
+    return `${map[flashCap]}${vendorLabel ? ` (${vendorLabel})` : ''}`;
   }
   const feature = featureList.find(value => /Embedded Flash/i.test(value));
   if (feature) {
@@ -483,7 +503,8 @@ function resolveEmbeddedFlash(chipKey, flashCap, flashVendor, featureList) {
 function resolveEmbeddedPsram(chipKey, psramCap, psramVendor, featureList) {
   const map = EMBEDDED_PSRAM_CAPACITY[chipKey];
   if (map && typeof psramCap === 'number' && !Number.isNaN(psramCap) && map[psramCap]) {
-    return `${map[psramCap]}${psramVendor ? ` (${psramVendor})` : ''}`;
+    const vendorLabel = formatVendorLabel(psramVendor);
+    return `${map[psramCap]}${vendorLabel ? ` (${vendorLabel})` : ''}`;
   }
   const feature = featureList.find(value => /Embedded PSRAM/i.test(value));
   if (feature) {
@@ -693,10 +714,10 @@ async function connect() {
     pushFact('Embedded PSRAM', embeddedPsram);
 
     if (flashVendor && !embeddedFlash) {
-      pushFact('Flash Vendor (eFuse)', flashVendor);
+      pushFact('Flash Vendor (eFuse)', formatVendorLabel(flashVendor));
     }
     if (psramVendor && !embeddedPsram) {
-      pushFact('PSRAM Vendor (eFuse)', psramVendor);
+      pushFact('PSRAM Vendor (eFuse)', formatVendorLabel(psramVendor));
     }
 
     if (typeof flashId === 'number' && !Number.isNaN(flashId)) {
@@ -729,10 +750,12 @@ async function connect() {
       }
     }
 
+    const featuresDisplay = featureList.filter(Boolean).map(humanizeFeature);
+
     chipDetails.value = {
       name: chipName,
       description: descriptionRaw || chipName,
-      features: featureList.filter(Boolean),
+      features: featuresDisplay,
       mac: macLabel,
       flashSize: flashLabel,
       crystal: crystalLabel,
