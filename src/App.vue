@@ -351,6 +351,43 @@ const FACT_ICONS = {
   'eFuse Block Version': 'mdi-shield-key',
 };
 
+const FACT_DISPLAY_ORDER = [
+  'Chip Variant',
+  'Package Form Factor',
+  'Revision',
+  'Embedded Flash',
+  'Embedded PSRAM',
+  'Flash ID',
+  'Flash Manufacturer',
+  'Flash Device',
+  'Flash Vendor (eFuse)',
+  'PSRAM Vendor (eFuse)',
+  'eFuse Block Version',
+  'USB Bridge',
+  'Connection Baud',
+];
+
+function sortFacts(facts) {
+  return [...facts].sort((a, b) => {
+    const orderA = FACT_DISPLAY_ORDER.indexOf(a.label);
+    const orderB = FACT_DISPLAY_ORDER.indexOf(b.label);
+    const hasOrderA = orderA !== -1;
+    const hasOrderB = orderB !== -1;
+
+    if (hasOrderA && hasOrderB) {
+      if (orderA !== orderB) {
+        return orderA - orderB;
+      }
+      return a.label.localeCompare(b.label);
+    }
+
+    if (hasOrderA) return -1;
+    if (hasOrderB) return 1;
+
+    return a.label.localeCompare(b.label);
+  });
+}
+
 function formatBytes(bytes) {
   if (!Number.isFinite(bytes) || bytes <= 0) return null;
   const units = ['bytes', 'KB', 'MB', 'GB'];
@@ -1148,6 +1185,7 @@ async function connect() {
     pushFact('Connection Baud', `${baudrate.toLocaleString()} bps`);
 
     const featuresDisplay = featureList.filter(Boolean).map(humanizeFeature);
+    const orderedFacts = sortFacts(facts);
 
     chipDetails.value = {
       name: chipName,
@@ -1156,7 +1194,7 @@ async function connect() {
       mac: macLabel,
       flashSize: flashLabel,
       crystal: crystalLabel,
-      facts,
+      facts: orderedFacts,
     };
 
       connected.value = true;

@@ -29,13 +29,38 @@
               </div>
             </v-col>
             <v-col cols="12" sm="4">
-              <div class="metric-card">
+              <div class="metric-card metric-card--features">
                 <v-icon class="metric-icon" size="22">mdi-tune-variant</v-icon>
                 <div class="metric-label">Feature Set</div>
                 <div class="metric-value">
                   {{ chipDetails.features?.length ? `${chipDetails.features.length} enabled` : 'Not reported' }}
                 </div>
-                <div class="metric-caption">See the feature list below</div>
+                <div
+                  v-if="chipDetails.features?.length"
+                  class="metric-caption"
+                >
+                  Reported capabilities
+                </div>
+                <v-chip-group
+                  v-if="chipDetails.features?.length"
+                  column
+                  class="feature-chip-group metric-chip-group"
+                >
+                  <v-chip
+                    v-for="feature in chipDetails.features"
+                    :key="feature"
+                    class="feature-chip"
+                    color="primary"
+                    variant="elevated"
+                    size="small"
+                  >
+                    <v-icon size="16" start>mdi-check-circle</v-icon>
+                    {{ feature }}
+                  </v-chip>
+                </v-chip-group>
+                <div v-else class="metric-chip-placeholder">
+                  <v-chip size="small" variant="outlined">Not reported</v-chip>
+                </div>
               </div>
             </v-col>
             <v-col cols="12" sm="4">
@@ -48,33 +73,10 @@
             </v-col>
           </v-row>
 
-          <div class="features-block">
-            <div class="section-title">
-              <v-icon size="18" class="me-2">mdi-star-circle-outline</v-icon>
-              Features
-            </div>
-            <v-chip-group column class="feature-chip-group">
-              <v-chip
-                v-for="feature in chipDetails.features"
-                :key="feature"
-                class="feature-chip"
-                color="primary"
-                variant="elevated"
-                size="small"
-              >
-                <v-icon size="16" start>mdi-check-circle-outline</v-icon>
-                {{ feature }}
-              </v-chip>
-              <v-chip v-if="!chipDetails.features?.length" size="small" variant="outlined">
-                Not reported
-              </v-chip>
-            </v-chip-group>
-          </div>
-
           <div v-if="chipDetails.facts?.length" class="extra-details">
             <div class="section-title mb-3">
-              <v-icon size="18" class="me-2">mdi-list-box-outline</v-icon>
-              Extra Details
+              <v-icon size="18" class="me-2">mdi-clipboard-text-outline</v-icon>
+              Hardware Details
             </div>
             <v-table density="comfortable" class="extra-details-table">
               <tbody>
@@ -204,8 +206,15 @@ defineProps({
   color: color-mix(in srgb, var(--v-theme-on-surface) 55%, transparent);
 }
 
-.features-block {
-  margin-bottom: 28px;
+.metric-card--features {
+  gap: 10px;
+}
+
+.metric-chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
 }
 
 .section-title {
@@ -220,14 +229,27 @@ defineProps({
 .feature-chip-group {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
 }
 
 .feature-chip {
   border-radius: 999px;
-  background: color-mix(in srgb, var(--v-theme-primary) 14%, transparent) !important;
-  color: color-mix(in srgb, var(--v-theme-on-primary) 90%, transparent) !important;
-  font-weight: 500;
+  background: color-mix(in srgb, var(--v-theme-primary) 16%, var(--v-theme-surface) 88%) !important;
+  color: color-mix(in srgb, var(--v-theme-primary) 75%, var(--v-theme-on-surface) 35%) !important;
+  font-weight: 600;
+}
+
+.feature-chip :deep(.v-icon) {
+  color: inherit;
+  opacity: 0.9;
+}
+
+.metric-chip-placeholder {
+  margin-top: 4px;
+  font-size: 0.78rem;
+  color: color-mix(in srgb, var(--v-theme-on-surface) 55%, transparent);
 }
 
 .extra-details {
