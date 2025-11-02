@@ -75,10 +75,6 @@
           </v-card>
 
           <div v-if="details.factGroups?.length" class="detail-groups">
-            <div class="section-title mb-3">
-              <v-icon size="18" class="me-2">mdi-chip</v-icon>
-              Hardware Details
-            </div>
             <v-row dense class="detail-group-row">
               <v-col v-for="group in details.factGroups" :key="group.title" cols="12" md="6">
                 <v-card class="detail-card" elevation="0" variant="tonal">
