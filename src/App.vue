@@ -682,34 +682,367 @@ const spiffsAgent = reactive({
   files: [],
 });
 const spiffsAgentRuntime = {
-  buffer: '',
-  decoder: null,
-  encoder: new TextEncoder(),
   commandActive: false,
+  greetingReceived: false,
+  greetingPromise: null,
+  writeInProgress: false,
 };
 const spiffsAutoLoadAttempted = ref(false);
 const spiffsAutoDeployAttempted = ref(false);
 const spiffsAutoListPending = ref(false);
 let spiffsAutoPrepareInFlight = false;
 let spiffsAutoPrepareNeedsRetry = false;
-const SPIFFS_AGENT_LINE_TIMEOUT = 6000;
-const SPIFFS_AGENT_BASE64_CHUNK = 57;
-
-function clearSpiffsAgentDecoder() {
-  if (spiffsAgentRuntime.decoder) {
-    try {
-      spiffsAgentRuntime.decoder.decode(new Uint8Array(), { stream: false });
-    } catch (err) {
-      console.warn('SPIFFS agent decoder flush failed', err);
-    }
-  }
-  spiffsAgentRuntime.decoder = null;
-  spiffsAgentRuntime.buffer = '';
-}
+const SPIFFS_AGENT_COMMAND_TIMEOUT = 6500;
+const SPIFFS_AGENT_GREETING_TIMEOUT = 5000;
+const SPIFFS_AGENT_RW_CHUNK = 1024;
+const SPIFFS_AGENT_OPCODES = {
+  LIST: 0xe0,
+  STAT: 0xe1,
+  READ: 0xe2,
+  WRITE_BEGIN: 0xe3,
+  WRITE_DATA: 0xe4,
+  WRITE_END: 0xe5,
+  DELETE: 0xe6,
+  FORMAT: 0xe7,
+  SET_BAUD: 0x0f,
+  RUN_USER_CODE: 0xd3,
+};
+const SPIFFS_AGENT_STATUS_TEXT = {
+  0x00: 'Success',
+  0x01: 'SPIFFS not mounted',
+  0x02: 'Invalid path or argument',
+  0x03: 'File not found',
+  0x04: 'I/O error or no space left',
+  0x05: 'Busy with another write',
+  0x06: 'Invalid size or range',
+  0x07: 'Payload too large',
+  0x08: 'Format failed',
+  0x09: 'Internal error',
+};
+const SPIFFS_AGENT_ERROR_TEXT = {
+  0x00: 'OK',
+  0xc0: 'Checksum error',
+  0xc1: 'Invalid payload length',
+  0xff: 'Unsupported command',
+};
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
 
 function setSpiffsAgentCommandActive(active) {
   spiffsAgentRuntime.commandActive = active;
   spiffsAgent.commandActive = active;
+}
+
+function resetSpiffsAgentRuntime() {
+  spiffsAgentRuntime.greetingReceived = false;
+  spiffsAgentRuntime.greetingPromise = null;
+  spiffsAgentRuntime.writeInProgress = false;
+  setSpiffsAgentCommandActive(false);
+}
+
+function ensureUint8Array(value) {
+  if (value instanceof Uint8Array) {
+    return value;
+  }
+  if (value instanceof ArrayBuffer) {
+    return new Uint8Array(value);
+  }
+  if (ArrayBuffer.isView(value)) {
+    return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  }
+  if (Array.isArray(value)) {
+    return new Uint8Array(value);
+  }
+  if (typeof value === 'number') {
+    return packUint32LE(value);
+  }
+  return new Uint8Array(0);
+}
+
+function packUint16LE(value) {
+  const buffer = new ArrayBuffer(2);
+  new DataView(buffer).setUint16(0, value & 0xffff, true);
+  return new Uint8Array(buffer);
+}
+
+function packUint32LE(value) {
+  const buffer = new ArrayBuffer(4);
+  new DataView(buffer).setUint32(0, value >>> 0, true);
+  return new Uint8Array(buffer);
+}
+
+function concatUint8Arrays(...arrays) {
+  const total = arrays.reduce((sum, arr) => sum + (arr?.length || 0), 0);
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const arr of arrays) {
+    if (!arr?.length) {
+      continue;
+    }
+    merged.set(arr, offset);
+    offset += arr.length;
+  }
+  return merged;
+}
+
+function computeSpiffsChecksum(payload) {
+  let checksum = 0xef;
+  for (let i = 0; i < payload.length; i += 1) {
+    checksum ^= payload[i];
+  }
+  return checksum >>> 0;
+}
+
+function describeSpiffsAgentStatus(errorCode, statusCode) {
+  const parts = [];
+  if (typeof errorCode === 'number') {
+    const description = SPIFFS_AGENT_ERROR_TEXT[errorCode] || `Error 0x${errorCode.toString(16)}`;
+    if (errorCode !== 0x00) {
+      parts.push(description);
+    }
+  }
+  if (typeof statusCode === 'number') {
+    const baseCode = statusCode & 0x7f;
+    if (baseCode !== 0x00) {
+      const description = SPIFFS_AGENT_STATUS_TEXT[baseCode] || `Status 0x${baseCode.toString(16)}`;
+      parts.push(description);
+    }
+  }
+  return parts.join('; ') || 'Unknown error';
+}
+
+async function ensureSpiffsStubGreeting() {
+  if (spiffsAgentRuntime.greetingReceived) {
+    return;
+  }
+  if (spiffsAgentRuntime.greetingPromise) {
+    await spiffsAgentRuntime.greetingPromise;
+    return;
+  }
+  const transportInstance = transport.value;
+  if (!transportInstance) {
+    throw new Error('Transport unavailable.');
+  }
+  if (transportInstance.buffer?.length >= 4) {
+    for (let i = 0; i <= transportInstance.buffer.length - 4; i += 1) {
+      if (
+        transportInstance.buffer[i] === 0x4f &&
+        transportInstance.buffer[i + 1] === 0x48 &&
+        transportInstance.buffer[i + 2] === 0x41 &&
+        transportInstance.buffer[i + 3] === 0x49
+      ) {
+        spiffsAgentRuntime.greetingReceived = true;
+        transportInstance.buffer = new Uint8Array(0);
+        return;
+      }
+    }
+  }
+  const promise = (async () => {
+    const deadline = performance.now() + SPIFFS_AGENT_GREETING_TIMEOUT;
+    let carry = new Uint8Array(0);
+    const observedFrames = [];
+    await new Promise(resolve => setTimeout(resolve, 50));
+    while (performance.now() < deadline) {
+      try {
+        const iterator = transportInstance.read(Math.max(200, deadline - performance.now()));
+        const { value: frame } = await iterator.next();
+        if (frame?.length) {
+          if (observedFrames.length < 5) {
+            observedFrames.push(
+              Array.from(frame.slice(0, 16))
+                .map(byte => byte.toString(16).padStart(2, '0'))
+                .join(' '),
+            );
+          }
+          const combined = concatUint8Arrays(carry, frame);
+          for (let i = 0; i <= combined.length - 4; i += 1) {
+            if (
+              combined[i] === 0x4f &&
+              combined[i + 1] === 0x48 &&
+              combined[i + 2] === 0x41 &&
+              combined[i + 3] === 0x49
+            ) {
+              spiffsAgentRuntime.greetingReceived = true;
+              transportInstance.buffer = new Uint8Array(0);
+              return;
+            }
+          }
+          carry =
+            combined.length >= 3
+              ? combined.slice(combined.length - 3)
+              : combined.slice(0);
+        }
+      } catch (error) {
+        const message = error?.message || String(error);
+        if (
+          /No serial data received|Possible serial noise or corruption|Packet content transfer stopped/i.test(
+            message,
+          )
+        ) {
+          await new Promise(resolve => setTimeout(resolve, 80));
+          continue;
+        }
+        appendLog?.(`SPIFFS agent greeting read error: ${message}`, '[debug]');
+        break;
+      }
+    }
+    if (!spiffsAgentRuntime.greetingReceived) {
+      if (observedFrames.length) {
+        appendLog?.(
+          `SPIFFS agent greeting timed out. Observed frames (hex): ${observedFrames.join(' | ')}`,
+          '[debug]',
+        );
+      } else {
+        appendLog?.('SPIFFS agent greeting timed out with no serial data observed.', '[debug]');
+      }
+      throw new Error('SPIFFS agent greeting timed out (OHAI frame not received).');
+    }
+  })().finally(() => {
+    spiffsAgentRuntime.greetingPromise = null;
+  });
+  spiffsAgentRuntime.greetingPromise = promise;
+  await promise;
+}
+
+async function executeSpiffsAgentCommand(opcode, payload = new Uint8Array(0), options = {}) {
+  const loaderInstance = loader.value;
+  if (!loaderInstance) {
+    throw new Error('Loader unavailable.');
+  }
+  if (!spiffsAgent.running) {
+    throw new Error('SPIFFS agent is not running.');
+  }
+  await ensureSpiffsStubGreeting();
+  const payloadBytes = ensureUint8Array(payload);
+  const checksum = computeSpiffsChecksum(payloadBytes);
+  const timeout = options.timeout ?? SPIFFS_AGENT_COMMAND_TIMEOUT;
+  const waitResponse = options.waitResponse !== false;
+  let value;
+  let rawResponse;
+  try {
+    [value, rawResponse] = await loaderInstance.command(
+      opcode,
+      payloadBytes,
+      checksum,
+      waitResponse,
+      timeout,
+    );
+  } catch (error) {
+    const message = error?.message || String(error);
+    const alreadyRetried = options.__retry === true;
+    if (!alreadyRetried && /No serial data received/i.test(message || '')) {
+      spiffsAgentRuntime.greetingReceived = false;
+      spiffsAgentRuntime.greetingPromise = null;
+      await ensureSpiffsStubGreeting();
+      const retryOptions = { ...options, __retry: true };
+      return executeSpiffsAgentCommand(opcode, payload, retryOptions);
+    }
+    throw error;
+  }
+  if (!waitResponse) {
+    return {
+      value,
+      payload: new Uint8Array(0),
+      hasMore: false,
+      statusCode: 0,
+    };
+  }
+  if (!rawResponse || rawResponse.length < 2) {
+    throw new Error('SPIFFS agent response truncated.');
+  }
+  const errorCode = rawResponse[rawResponse.length - 2];
+  const statusByte = rawResponse[rawResponse.length - 1];
+  const responsePayload = rawResponse.slice(0, -2);
+  const statusCode = statusByte & 0x7f;
+  const hasMore = (statusByte & 0x80) !== 0;
+  if (errorCode !== 0x00 || statusCode !== 0x00) {
+    const description = describeSpiffsAgentStatus(errorCode, statusCode);
+    const error = new Error(`SPIFFS command 0x${opcode.toString(16)} failed: ${description}`);
+    error.errorCode = errorCode;
+    error.statusCode = statusCode;
+    error.hasMore = hasMore;
+    error.payload = responsePayload;
+    throw error;
+  }
+  return {
+    value,
+    payload: responsePayload,
+    hasMore,
+    statusCode,
+  };
+}
+
+function encodeSpiffsName(name) {
+  if (typeof name !== 'string') {
+    return new Uint8Array(0);
+  }
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return new Uint8Array(0);
+  }
+  return textEncoder.encode(trimmed);
+}
+
+function buildSpiffsNamePayload(name) {
+  const nameBytes = encodeSpiffsName(name);
+  return concatUint8Arrays(packUint16LE(nameBytes.length), nameBytes);
+}
+
+function parseSpiffsListPayload(payload) {
+  const entries = [];
+  if (!payload?.length) {
+    return entries;
+  }
+  const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  let offset = 0;
+  while (offset + 2 <= payload.length) {
+    const nameLength = view.getUint16(offset, true);
+    offset += 2;
+    if (offset + nameLength + 4 > payload.length) {
+      throw new Error('SPIFFS list payload truncated.');
+    }
+    const nameBytes = payload.slice(offset, offset + nameLength);
+    offset += nameLength;
+    const size = view.getUint32(offset, true);
+    offset += 4;
+    const name = textDecoder.decode(nameBytes);
+    entries.push({ name, size });
+  }
+  if (offset !== payload.length) {
+    throw new Error('SPIFFS list payload contained extra data.');
+  }
+  return entries;
+}
+
+function formatSpiffsAgentError(error, fallback = 'SPIFFS command failed.') {
+  if (!error) {
+    return fallback;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  const statusCode = error?.statusCode;
+  const errorCode = error?.errorCode;
+  if (statusCode === 0x01) {
+    return 'SPIFFS not mounted. Format the partition or reset the stub.';
+  }
+  if (statusCode === 0x03) {
+    return 'File not found on SPIFFS.';
+  }
+  if (statusCode === 0x05) {
+    return 'SPIFFS agent is busy with another write session.';
+  }
+  if (statusCode === 0x06) {
+    return 'Invalid size or range.';
+  }
+  if (statusCode === 0x08) {
+    return 'SPIFFS format failed.';
+  }
+  if (errorCode === 0xff) {
+    return 'Command unsupported by SPIFFS stub.';
+  }
+  const description = describeSpiffsAgentStatus(errorCode, statusCode);
+  return error?.message || description || fallback;
 }
 
 function setSpiffsAgentIdleStatus() {
@@ -732,8 +1065,7 @@ function resetSpiffsAgentSession(options = {}) {
     spiffsAgent.loaded = false;
     spiffsAgent.size = 0;
   }
-  clearSpiffsAgentDecoder();
-  setSpiffsAgentCommandActive(false);
+  resetSpiffsAgentRuntime();
   setSpiffsAgentIdleStatus();
 }
 
@@ -2841,101 +3173,19 @@ function parseSpiffsAgentBinary(binary) {
   return { entry, segments };
 }
 
-async function writeSpiffsAgentLines(lines) {
-  const port = currentPort.value;
-  if (!port?.writable) {
-    throw new Error('Serial port is not writable.');
-  }
-  const writer = port.writable.getWriter();
-  try {
-    for (const raw of lines) {
-      const line = raw.endsWith('\n') ? raw : `${raw}\n`;
-      await writer.write(spiffsAgentRuntime.encoder.encode(line));
-    }
-  } finally {
-    writer.releaseLock();
-  }
-}
-
-async function readSpiffsAgentLine(options = {}) {
-  const { timeout = SPIFFS_AGENT_LINE_TIMEOUT, skipEmpty = false } = options;
-  const reader = ensureTransportReader();
-  if (!reader) {
-    throw new Error('Serial reader unavailable.');
-  }
-  if (!spiffsAgentRuntime.decoder) {
-    spiffsAgentRuntime.decoder = new TextDecoder();
-  }
-  const started = performance.now();
-  while (true) {
-    const newlineIndex = spiffsAgentRuntime.buffer.indexOf('\n');
-    if (newlineIndex >= 0) {
-      let line = spiffsAgentRuntime.buffer.slice(0, newlineIndex);
-      spiffsAgentRuntime.buffer = spiffsAgentRuntime.buffer.slice(newlineIndex + 1);
-      if (line.endsWith('\r')) {
-        line = line.slice(0, -1);
-      }
-      if (skipEmpty && !line.trim()) {
-        continue;
-      }
-      return line;
-    }
-    if (timeout && performance.now() - started > timeout) {
-      throw new Error('SPIFFS agent response timed out.');
-    }
-    // eslint-disable-next-line no-await-in-loop
-    const { value, done } = await reader.read();
-    if (done) {
-      throw new Error('SPIFFS agent closed the serial stream.');
-    }
-    if (value?.length) {
-      spiffsAgentRuntime.buffer += spiffsAgentRuntime.decoder.decode(value, { stream: true });
-    }
-  }
-}
-
-function decodeBase64Lines(lines, expectedLength) {
-  const chunks = [];
-  let total = 0;
-  for (const line of lines) {
-    if (!line && expectedLength === 0) {
-      continue;
-    }
-    const decoded = atob(line || '');
-    total += decoded.length;
-    chunks.push(decoded);
-  }
-  if (typeof expectedLength === 'number' && expectedLength >= 0 && total !== expectedLength) {
-    throw new Error(`SPIFFS agent reported ${expectedLength} bytes but transmitted ${total}.`);
-  }
-  const buffer = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    for (let i = 0; i < chunk.length; i += 1) {
-      buffer[offset++] = chunk.charCodeAt(i);
-    }
-  }
-  return buffer;
-}
-
 async function fetchSpiffsFileList() {
-  await writeSpiffsAgentLines(['LIST']);
   const files = [];
+  let skip = 0;
   while (true) {
+    const request = packUint32LE(skip);
     // eslint-disable-next-line no-await-in-loop
-    const line = await readSpiffsAgentLine({ skipEmpty: true });
-    if (line === 'DONE') {
+    const response = await executeSpiffsAgentCommand(SPIFFS_AGENT_OPCODES.LIST, request);
+    const entries = parseSpiffsListPayload(response.payload);
+    files.push(...entries);
+    const returned = response.value ?? entries.length;
+    skip += returned;
+    if (!response.hasMore || entries.length === 0) {
       break;
-    }
-    if (line.startsWith('ERR')) {
-      throw new Error(line.slice(4).trim() || 'LIST command failed.');
-    }
-    const match = line.match(/^FILE\s+(.+)\s+(\d+)$/);
-    if (match) {
-      files.push({
-        name: match[1],
-        size: Number.parseInt(match[2], 10) || 0,
-      });
     }
   }
   return files;
@@ -2991,10 +3241,10 @@ async function handleDeploySpiffsAgent() {
   const previousSyncStub = loaderInstance.syncStubDetected;
   let spiffsStubStarted = false;
   try {
-    spiffsAgent.status = 'Uploading stub to device RAM...';
-    appendLog('Uploading SPIFFS agent stub to device RAM...', '[debug]');
-    await releaseTransportReader();
-    clearSpiffsAgentDecoder();
+  spiffsAgent.status = 'Uploading stub to device RAM...';
+  appendLog('Uploading SPIFFS agent stub to device RAM...', '[debug]');
+  await releaseTransportReader();
+  resetSpiffsAgentRuntime();
     spiffsAgent.status = 'Switching device to ROM bootloader...';
     appendLog('Re-synchronizing with ROM bootloader for SPIFFS agent upload.', '[debug]');
     try {
@@ -3033,12 +3283,14 @@ async function handleDeploySpiffsAgent() {
     spiffsAgent.status = 'Starting stub...';
     await loaderInstance.memFinish(entry);
     await releaseTransportReader();
-    loaderInstance.transport.buffer = new Uint8Array(0);
+    spiffsAgentRuntime.greetingReceived = false;
+    spiffsAgentRuntime.greetingPromise = null;
+    await ensureSpiffsStubGreeting();
+    await releaseTransportReader();
     spiffsAgent.running = true;
     spiffsStubStarted = true;
     spiffsAgent.files = [];
     spiffsAgent.status = 'SPIFFS agent running. Flasher stub disabled until you disconnect and reconnect.';
-    spiffsAgentRuntime.buffer = '';
     appendLog('SPIFFS agent stub running. Use the controls below to manage SPIFFS.', '[debug]');
     appendLog(
       'Flasher stub disabled while SPIFFS agent is active. Disconnect & reconnect after finishing to restore flashing features.',
@@ -3046,14 +3298,21 @@ async function handleDeploySpiffsAgent() {
     );
     queueMicrotask(() => {
       const shouldBeSilent = !spiffsAutoListPending.value;
-      handleListSpiffsFiles({ silent: shouldBeSilent })
+      ensureSpiffsStubGreeting()
         .catch(error => {
-          appendLog(`SPIFFS agent auto-refresh failed: ${error?.message || error}`, '[debug]');
+          const message = error?.message || String(error);
+          appendLog(`SPIFFS agent greeting failed: ${message}`, '[debug]');
+          throw error;
         })
-        .finally(() => {
+        .then(() => handleListSpiffsFiles({ silent: shouldBeSilent }))
+        .then(() => {
           if (!shouldBeSilent) {
             spiffsAutoListPending.value = false;
           }
+        })
+        .catch(error => {
+          appendLog(`SPIFFS agent auto-refresh failed: ${error?.message || error}`, '[debug]');
+          scheduleSpiffsAutoPrepare();
         });
     });
   } catch (error) {
@@ -3061,7 +3320,7 @@ async function handleDeploySpiffsAgent() {
     spiffsAgent.error = error?.message || String(error);
     spiffsAgent.status = `Stub upload failed: ${spiffsAgent.error}`;
     appendLog(`SPIFFS agent upload failed: ${spiffsAgent.error}`, '[error]');
-    clearSpiffsAgentDecoder();
+    resetSpiffsAgentRuntime();
     try {
       spiffsAgent.status = 'Attempting to restore flasher stub...';
       await releaseTransportReader();
@@ -3145,6 +3404,7 @@ async function handleListSpiffsFiles(options = {}) {
     }
     const files = await fetchSpiffsFileList();
     spiffsAgent.files = files;
+    spiffsAutoListPending.value = false;
     if (!silent) {
       if (files.length) {
         spiffsAgent.status = `Found ${files.length} file${files.length === 1 ? '' : 's'} on SPIFFS.`;
@@ -3154,7 +3414,7 @@ async function handleListSpiffsFiles(options = {}) {
     }
     appendLog('SPIFFS agent: file list refreshed.', '[debug]');
   } catch (error) {
-    const message = error?.message || String(error);
+    const message = formatSpiffsAgentError(error, error?.message || String(error));
     spiffsAgent.error = message;
     if (!silent) {
       spiffsAgent.status = `List failed: ${message}`;
@@ -3193,20 +3453,14 @@ async function handleDeleteSpiffsFile(name) {
   try {
     setSpiffsAgentCommandActive(true);
     spiffsAgent.status = `Deleting ${target}...`;
-    await writeSpiffsAgentLines([`DELETE ${target}`]);
-    const response = await readSpiffsAgentLine({ skipEmpty: true });
-    if (response === 'OK') {
-      const files = await fetchSpiffsFileList();
-      spiffsAgent.files = files;
-      spiffsAgent.status = `Deleted ${target}.`;
-      appendLog(`SPIFFS agent deleted ${target}.`, '[debug]');
-    } else if (response.startsWith('ERR')) {
-      throw new Error(response.slice(4).trim() || 'Delete failed.');
-    } else {
-      throw new Error(`Unexpected response: ${response}`);
-    }
+    const payload = buildSpiffsNamePayload(target);
+    await executeSpiffsAgentCommand(SPIFFS_AGENT_OPCODES.DELETE, payload);
+    const files = await fetchSpiffsFileList();
+    spiffsAgent.files = files;
+    spiffsAgent.status = `Deleted ${target}.`;
+    appendLog(`SPIFFS agent deleted ${target}.`, '[debug]');
   } catch (error) {
-    const message = error?.message || String(error);
+    const message = formatSpiffsAgentError(error, error?.message || String(error));
     spiffsAgent.error = message;
     spiffsAgent.status = `Delete failed: ${message}`;
     appendLog(`SPIFFS agent delete failed: ${message}`, '[warn]');
@@ -3226,6 +3480,10 @@ async function handleUploadSpiffsFile(payload) {
   }
   if (spiffsAgentRuntime.commandActive) {
     spiffsAgent.status = 'Agent is busy processing a command...';
+    return;
+  }
+  if (spiffsAgentRuntime.writeInProgress) {
+    spiffsAgent.status = 'A SPIFFS write is already in progress.';
     return;
   }
   if (spiffsAgent.busy) {
@@ -3250,52 +3508,53 @@ async function handleUploadSpiffsFile(payload) {
   }
   spiffsAgent.busy = true;
   spiffsAgent.error = null;
+  let writeStarted = false;
   try {
     setSpiffsAgentCommandActive(true);
-    spiffsAgent.status = `Uploading ${name} (${data.length.toLocaleString()} bytes)...`;
-    const port = currentPort.value;
-    if (!port?.writable) {
-      throw new Error('Serial port is not writable.');
-    }
-    const writer = port.writable.getWriter();
-    try {
-      await writer.write(
-        spiffsAgentRuntime.encoder.encode(`WRITE ${name} ${data.length}\n`),
-      );
-      const chunkSize = SPIFFS_AGENT_BASE64_CHUNK;
-      for (let offset = 0; offset < data.length; offset += chunkSize) {
-        const slice = data.subarray(offset, Math.min(offset + chunkSize, data.length));
-        let binary = '';
-        for (let i = 0; i < slice.length; i += 1) {
-          binary += String.fromCharCode(slice[i]);
-        }
-        const base64 = btoa(binary);
-        // eslint-disable-next-line no-await-in-loop
-        await writer.write(spiffsAgentRuntime.encoder.encode(`${base64}\n`));
+    const totalBytes = data.length;
+    spiffsAgent.status = `Uploading ${name} (${totalBytes.toLocaleString()} bytes)...`;
+    const header = concatUint8Arrays(buildSpiffsNamePayload(name), packUint32LE(totalBytes));
+    await executeSpiffsAgentCommand(SPIFFS_AGENT_OPCODES.WRITE_BEGIN, header, {
+      timeout:
+        SPIFFS_AGENT_COMMAND_TIMEOUT +
+        Math.min(15000, Math.max(2000, Math.floor(totalBytes / 2))),
+    });
+    spiffsAgentRuntime.writeInProgress = true;
+    writeStarted = true;
+    const chunkSize = SPIFFS_AGENT_RW_CHUNK;
+    for (let offset = 0; offset < totalBytes; offset += chunkSize) {
+      const slice = data.subarray(offset, Math.min(offset + chunkSize, totalBytes));
+      // eslint-disable-next-line no-await-in-loop
+      await executeSpiffsAgentCommand(SPIFFS_AGENT_OPCODES.WRITE_DATA, slice, {
+        timeout: SPIFFS_AGENT_COMMAND_TIMEOUT + Math.max(1500, slice.length * 5),
+      });
+      if (totalBytes > 0) {
+        const progress = Math.min(100, Math.floor(((offset + slice.length) / totalBytes) * 100));
+        spiffsAgent.status = `Uploading ${name}... ${progress}%`;
       }
-      if (data.length === 0) {
-        await writer.write(spiffsAgentRuntime.encoder.encode('\n'));
-      }
-    } finally {
-      writer.releaseLock();
     }
-    const response = await readSpiffsAgentLine({ skipEmpty: true });
-    if (response === 'OK' || response === 'DONE') {
-      const files = await fetchSpiffsFileList();
-      spiffsAgent.files = files;
-      spiffsAgent.status = `Uploaded ${name}.`;
-      appendLog(`SPIFFS agent uploaded ${name}.`, '[debug]');
-    } else if (response.startsWith('ERR')) {
-      throw new Error(response.slice(4).trim() || 'Write failed.');
-    } else {
-      throw new Error(`Unexpected response: ${response}`);
-    }
+    await executeSpiffsAgentCommand(SPIFFS_AGENT_OPCODES.WRITE_END, new Uint8Array([1]));
+    const files = await fetchSpiffsFileList();
+    spiffsAgent.files = files;
+    spiffsAgent.status = `Uploaded ${name}.`;
+    appendLog(`SPIFFS agent uploaded ${name}.`, '[debug]');
   } catch (error) {
-    const message = error?.message || String(error);
+    if (writeStarted) {
+      try {
+        await executeSpiffsAgentCommand(SPIFFS_AGENT_OPCODES.WRITE_END, new Uint8Array([0]));
+      } catch (abortError) {
+        appendLog(
+          `SPIFFS agent write abort failed: ${abortError?.message || abortError}`,
+          '[debug]',
+        );
+      }
+    }
+    const message = formatSpiffsAgentError(error, error?.message || String(error));
     spiffsAgent.error = message;
     spiffsAgent.status = `Upload failed: ${message}`;
     appendLog(`SPIFFS agent upload failed: ${message}`, '[warn]');
   } finally {
+    spiffsAgentRuntime.writeInProgress = false;
     setSpiffsAgentCommandActive(false);
     spiffsAgent.busy = false;
   }
@@ -3326,32 +3585,55 @@ async function handleDownloadSpiffsFile(name) {
   try {
     setSpiffsAgentCommandActive(true);
     spiffsAgent.status = `Reading ${target}...`;
-    await writeSpiffsAgentLines([`READ ${target}`]);
-    const header = await readSpiffsAgentLine({ skipEmpty: true });
-    if (header.startsWith('ERR')) {
-      throw new Error(header.slice(4).trim() || 'Read failed.');
-    }
-    if (!header.startsWith('DATA ')) {
-      throw new Error(`Unexpected response: ${header}`);
-    }
-    const expectedLength = Number.parseInt(header.slice(5).trim(), 10);
-    const base64Lines = [];
+    const namePayload = buildSpiffsNamePayload(target);
+    const chunks = [];
+    let offset = 0;
+    let expectedSize = null;
     while (true) {
-      const line = await readSpiffsAgentLine({ skipEmpty: false });
-      if (line === 'DONE') {
+      const request = concatUint8Arrays(namePayload, packUint32LE(offset), packUint32LE(0));
+      // eslint-disable-next-line no-await-in-loop
+      const response = await executeSpiffsAgentCommand(SPIFFS_AGENT_OPCODES.READ, request, {
+        timeout: SPIFFS_AGENT_COMMAND_TIMEOUT + 4000,
+      });
+      const payload = response.payload;
+      if (!payload || payload.length < 4) {
+        throw new Error('SPIFFS agent read payload truncated.');
+      }
+      const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+      const chunkLength = view.getUint32(0, true);
+      if (payload.length < 4 + chunkLength) {
+        throw new Error('SPIFFS agent read payload incomplete.');
+      }
+      const chunk = payload.slice(4, 4 + chunkLength);
+      expectedSize = response.value ?? expectedSize ?? offset + chunkLength;
+      if (chunkLength > 0) {
+        chunks.push(chunk);
+        offset += chunkLength;
+        const total = expectedSize ?? 0;
+        if (total > 0) {
+          const progress = Math.min(100, Math.floor((offset / total) * 100));
+          spiffsAgent.status = `Reading ${target}... ${progress}%`;
+        }
+      }
+      if (!response.hasMore || chunkLength === 0) {
         break;
       }
-      if (line.startsWith('ERR')) {
-        throw new Error(line.slice(4).trim() || 'Read failed.');
+      if (expectedSize != null && offset >= expectedSize) {
+        break;
       }
-      base64Lines.push(line.trim());
     }
-    const bytes = decodeBase64Lines(base64Lines, Number.isFinite(expectedLength) ? expectedLength : undefined);
-    triggerSpiffsFileDownload(target, bytes);
-    spiffsAgent.status = `Downloaded ${target} (${bytes.length.toLocaleString()} bytes).`;
+    const totalBytes = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    const fileBuffer = new Uint8Array(totalBytes);
+    let position = 0;
+    for (const chunk of chunks) {
+      fileBuffer.set(chunk, position);
+      position += chunk.length;
+    }
+    triggerSpiffsFileDownload(target, fileBuffer);
+    spiffsAgent.status = `Downloaded ${target} (${totalBytes.toLocaleString()} bytes).`;
     appendLog(`SPIFFS agent downloaded ${target}.`, '[debug]');
   } catch (error) {
-    const message = error?.message || String(error);
+    const message = formatSpiffsAgentError(error, error?.message || String(error));
     spiffsAgent.error = message;
     spiffsAgent.status = `Download failed: ${message}`;
     appendLog(`SPIFFS agent download failed: ${message}`, '[warn]');
@@ -3378,19 +3660,14 @@ async function handleFormatSpiffsAgent() {
   try {
     setSpiffsAgentCommandActive(true);
     spiffsAgent.status = 'Formatting SPIFFS...';
-    await writeSpiffsAgentLines(['FORMAT']);
-    const response = await readSpiffsAgentLine({ skipEmpty: true });
-    if (response === 'OK') {
-      spiffsAgent.files = [];
-      spiffsAgent.status = 'SPIFFS formatted.';
-      appendLog('SPIFFS agent formatted the filesystem.', '[debug]');
-    } else if (response.startsWith('ERR')) {
-      throw new Error(response.slice(4).trim() || 'Format failed.');
-    } else {
-      throw new Error(`Unexpected response: ${response}`);
-    }
+    await executeSpiffsAgentCommand(SPIFFS_AGENT_OPCODES.FORMAT, new Uint8Array(0), {
+      timeout: SPIFFS_AGENT_COMMAND_TIMEOUT + 12000,
+    });
+    spiffsAgent.files = [];
+    spiffsAgent.status = 'SPIFFS formatted.';
+    appendLog('SPIFFS agent formatted the filesystem.', '[debug]');
   } catch (error) {
-    const message = error?.message || String(error);
+    const message = formatSpiffsAgentError(error, error?.message || String(error));
     spiffsAgent.error = message;
     spiffsAgent.status = `Format failed: ${message}`;
     appendLog(`SPIFFS agent format failed: ${message}`, '[warn]');
@@ -3417,30 +3694,22 @@ async function handleResetSpiffsAgent() {
   try {
     setSpiffsAgentCommandActive(true);
     spiffsAgent.status = 'Resetting device...';
-    await writeSpiffsAgentLines(['RESET']);
-    let response = null;
-    try {
-      response = await readSpiffsAgentLine({ skipEmpty: true, timeout: 3000 });
-    } catch (err) {
-      response = null;
-    }
-    if (response && response.startsWith('ERR')) {
-      throw new Error(response.slice(4).trim() || 'Reset failed.');
-    }
+    await executeSpiffsAgentCommand(SPIFFS_AGENT_OPCODES.RUN_USER_CODE, new Uint8Array(0), {
+      waitResponse: false,
+    });
     spiffsAgent.status = 'Device reset requested. Reconnect to bootloader to continue.';
     appendLog('SPIFFS agent requested device reset.', '[debug]');
   } catch (error) {
-    const message = error?.message || String(error);
+    const message = formatSpiffsAgentError(error, error?.message || String(error));
     spiffsAgent.error = message;
     spiffsAgent.status = `Reset failed: ${message}`;
     appendLog(`SPIFFS agent reset failed: ${message}`, '[warn]');
-    return;
   } finally {
     setSpiffsAgentCommandActive(false);
     spiffsAgent.busy = false;
     spiffsAgent.running = false;
     spiffsAgent.files = [];
-    clearSpiffsAgentDecoder();
+    resetSpiffsAgentRuntime();
     await releaseTransportReader();
   }
 }
