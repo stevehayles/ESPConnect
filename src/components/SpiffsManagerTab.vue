@@ -160,7 +160,7 @@
                   size="small"
                   variant="text"
                   color="primary"
-                  :disabled="loading || busy || saving"
+                  :disabled="loading || busy || saving || readOnly"
                   @click="emit('download-file', file.name)"
                 >
                   <v-icon start size="16">mdi-download</v-icon>

@@ -568,6 +568,23 @@ function formatUsbBridge(info) {
   return vendorName;
 }
 
+function saveBinaryFile(name, data) {
+  if (!data) return;
+  const safeName = sanitizeFileName(name, 'download');
+  const blob = new Blob([data], { type: 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  try {
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = safeName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 function resetSpiffsState() {
   spiffsState.client = null;
   spiffsState.files = [];
