@@ -85,6 +85,8 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue';
 
+const LITTLEFS_MODULE_PATH = '/wasm/littlefs/index.js';
+
 const state = reactive({
   status: '',
   error: '',
@@ -102,28 +104,29 @@ const form = reactive({
 const canAddFile = computed(() => Boolean(form.path.trim()) && form.content.length > 0);
 
 async function loadFactory() {
-  const modulePath =
-    typeof window === 'undefined'
-      ? '/wasm/littlefs/index.js'
-      : new URL('/wasm/littlefs/index.js', window.location.origin).toString();
+  const resolvedUrl = new URL(LITTLEFS_MODULE_PATH, window.location.origin).toString();
   const module = (await import(
-    /* @vite-ignore */ modulePath
+    /* @vite-ignore */ resolvedUrl
   )) as typeof import('/wasm/littlefs/index.js');
   return module.createLittleFS || module.default;
 }
 
 async function initializeLittleFs() {
+  if (state.loading) return;
   state.loading = true;
   state.error = '';
   state.status = 'Loading WASM module...';
+  console.time('littlefs-init');
   try {
     const factory = await loadFactory();
     state.status = 'Mounting filesystem...';
     state.fs = await factory({ formatOnInit: true });
+    console.timeEnd('littlefs-init');
     state.ready = true;
     state.status = 'LittleFS is ready.';
     await refreshListing();
   } catch (error) {
+    console.error('LittleFS init failed', error);
     state.error =
       error?.message || 'Failed to load the LittleFS module. Confirm the WASM files exist under /public/wasm.';
     state.ready = false;
@@ -134,7 +137,7 @@ async function initializeLittleFs() {
 }
 
 async function formatLittleFs() {
-  if (!state.fs) return;
+  if (!state.fs || state.loading) return;
   try {
     state.loading = true;
     state.fs.format();
@@ -148,10 +151,7 @@ async function formatLittleFs() {
 }
 
 async function refreshListing() {
-  if (!state.fs) {
-    state.files = [];
-    return;
-  }
+  if (!state.fs || state.loading) return;
   try {
     const entries = state.fs.list();
     state.files = Array.isArray(entries) ? entries : [];
@@ -161,7 +161,7 @@ async function refreshListing() {
 }
 
 async function addFile() {
-  if (!state.fs || !form.path.trim()) return;
+  if (!state.fs || state.loading || !form.path.trim()) return;
   try {
     state.loading = true;
     state.fs.addFile(form.path.trim(), form.content);
@@ -175,7 +175,7 @@ async function addFile() {
 }
 
 async function deleteFile() {
-  if (!state.fs || !form.path.trim()) return;
+  if (!state.fs || state.loading || !form.path.trim()) return;
   try {
     state.loading = true;
     state.fs.deleteFile(form.path.trim());
