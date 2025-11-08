@@ -1660,7 +1660,7 @@ const flashSizeBytes = ref(null);
 const showBootDialog = ref(false);
 const lastErrorMessage = ref('');
 
-const offsetPresets = [
+const DEFAULT_OFFSET_PRESETS = [
   { label: 'Application (0x10000)', value: '0x10000' },
   { label: 'Bootloader (0x1000)', value: '0x1000' },
   { label: 'Partition Table (0x8000)', value: '0x8000' },
@@ -2643,6 +2643,17 @@ const partitionOptionLookup = computed(() => {
     map.set(option.value, option);
   }
   return map;
+});
+
+const offsetPresets = computed(() => {
+  const options = partitionDownloadOptions.value;
+  if (options.length) {
+    return options.map(option => ({
+      label: option.label,
+      value: option.offsetHex || `0x${Number(option.offset).toString(16)}`,
+    }));
+  }
+  return DEFAULT_OFFSET_PRESETS;
 });
 
 watch(partitionDownloadOptions, options => {
