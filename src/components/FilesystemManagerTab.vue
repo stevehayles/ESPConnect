@@ -285,7 +285,14 @@ const filesPerPage = ref(25);
 const filesPage = ref(1);
 const fileTypeFilter = ref('all');
 const fsLabel = computed(() => (props.fsLabel && props.fsLabel.trim()) || 'SPIFFS');
-const partitionHeading = computed(() => props.partitionTitle?.trim() || `${fsLabel.value} Partition`);
+const selectedPartition = computed(() =>
+  props.partitions.find(partition => partition.id === props.selectedPartitionId) ?? null,
+);
+const partitionHeading = computed(() => {
+  const sizeLabel = selectedPartition.value?.sizeText?.trim();
+  const base = props.partitionTitle?.trim() || `${fsLabel.value} Partition`;
+  return sizeLabel ? `${base} · ${sizeLabel}` : base;
+});
 const emptyMessage = computed(
   () => props.emptyStateMessage?.trim() || `No files detected. Upload or restore a ${fsLabel.value} image to begin.`,
 );
