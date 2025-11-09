@@ -126,7 +126,7 @@
               {{ formatSize(unwrapItem(item).size) }}
             </template>
             <template #item.actions="{ item }">
-              <div class="filesystem-table__actions">
+              <div>
                 <v-btn size="small" variant="text" color="info"
                   v-if="enablePreview && isViewable(unwrapItem(item).name)"
                   :disabled="loading || busy || saving || readOnly" :icon="previewIcon(unwrapItem(item).name)"
