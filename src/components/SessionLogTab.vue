@@ -82,7 +82,7 @@ defineExpose({
   background: rgba(15, 23, 42, 0.75);
   border-radius: 12px;
   padding: 14px;
-  max-height: 360px;
+  max-height: 100%;
   overflow-y: auto;
 }
 
