@@ -858,9 +858,10 @@ async function loadLittlefsPartition(partition) {
   littlefsState.error = null;
   littlefsState.readOnly = false;
   littlefsState.readOnlyReason = '';
-  littlefsState.status = `Reading LittleFS @ 0x${partition.offset.toString(16).toUpperCase()}...`;
+  const littlefsBaudLabel = currentBaud.value ? ` @ ${currentBaud.value.toLocaleString()} bps` : '';
+  littlefsState.status = `Reading LittleFS @ 0x${partition.offset.toString(16).toUpperCase()}${littlefsBaudLabel}...`;
   littlefsLoadingDialog.visible = true;
-  littlefsLoadingDialog.label = `Reading ${partition.label || 'LittleFS'}...`;
+  littlefsLoadingDialog.label = `Reading ${partition.label || 'LittleFS'}${littlefsBaudLabel}...`;
   const attemptedConfigs = [];
   try {
     await releaseTransportReader();
@@ -1591,9 +1592,10 @@ async function loadSpiffsPartition(partition) {
   spiffsState.error = null;
   spiffsState.readOnly = false;
   spiffsState.readOnlyReason = '';
-  spiffsState.status = `Reading SPIFFS @ 0x${partition.offset.toString(16).toUpperCase()}...`;
+  const spiffsBaudLabel = currentBaud.value ? ` @ ${currentBaud.value.toLocaleString()} bps` : '';
+  spiffsState.status = `Reading SPIFFS @ 0x${partition.offset.toString(16).toUpperCase()}${spiffsBaudLabel}...`;
   spiffsLoadingDialog.visible = true;
-  spiffsLoadingDialog.label = `Reading ${partition.label || 'SPIFFS'}...`;
+  spiffsLoadingDialog.label = `Reading ${partition.label || 'SPIFFS'}${spiffsBaudLabel}...`;
   try {
     await releaseTransportReader();
     const image = await loader.value.readFlash(partition.offset, partition.size);
