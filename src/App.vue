@@ -1133,8 +1133,14 @@ async function handleLittlefsBackup() {
     littlefsState.status = 'Backup downloaded. You can now save changes.';
     appendLog('LittleFS backup downloaded.', '[debug]');
   } catch (error) {
-    littlefsState.error = formatErrorMessage(error);
-    littlefsState.status = 'LittleFS backup failed.';
+    const message = formatErrorMessage(error);
+    if (message === 'Download cancelled by user') {
+      littlefsState.error = null;
+      littlefsState.status = 'LittleFS backup cancelled.';
+    } else {
+      littlefsState.error = message;
+      littlefsState.status = 'LittleFS backup failed.';
+    }
   } finally {
     littlefsBackupDialog.visible = false;
     littlefsBackupDialog.value = 0;
@@ -1624,8 +1630,14 @@ async function handleFatfsBackup() {
     fatfsState.status = 'Backup downloaded. You can now save changes.';
     appendLog('FATFS backup downloaded.', '[debug]');
   } catch (error) {
-    fatfsState.error = formatErrorMessage(error);
-    fatfsState.status = 'FATFS backup failed.';
+    const message = formatErrorMessage(error);
+    if (message === 'Download cancelled by user') {
+      fatfsState.error = null;
+      fatfsState.status = 'FATFS backup cancelled.';
+    } else {
+      fatfsState.error = message;
+      fatfsState.status = 'FATFS backup failed.';
+    }
   } finally {
     fatfsBackupDialog.visible = false;
     fatfsBackupDialog.value = 0;
@@ -2385,8 +2397,14 @@ async function handleSpiffsBackup() {
     spiffsState.status = 'Backup downloaded. You can now save changes.';
     appendLog('SPIFFS backup downloaded.', '[debug]');
   } catch (error) {
-    spiffsState.error = formatErrorMessage(error);
-    spiffsState.status = 'SPIFFS backup failed.';
+    const message = formatErrorMessage(error);
+    if (message === 'Download cancelled by user') {
+      spiffsState.error = null;
+      spiffsState.status = 'SPIFFS backup cancelled.';
+    } else {
+      spiffsState.error = message;
+      spiffsState.status = 'SPIFFS backup failed.';
+    }
   } finally {
     spiffsBackupDialog.visible = false;
     spiffsBackupDialog.value = 0;
@@ -5569,15 +5587,16 @@ function handleCancelFlash() {
   }
 }
 
-function handleCancelDownload() {
-  if (!downloadProgress.visible) {
+function handleCancelDownload(options = {}) {
+  if (downloadCancelRequested.value) {
     return;
   }
-  if (!downloadCancelRequested.value) {
-    downloadCancelRequested.value = true;
-    downloadProgress.label = 'Stopping download...';
+  downloadCancelRequested.value = true;
+  const label = options?.label || 'Stopping download...';
+  if (downloadProgress.visible) {
+    downloadProgress.label = label;
     flashReadStatusType.value = 'info';
-    flashReadStatus.value = 'Stopping download...';
+    flashReadStatus.value = label;
   }
 }
 
