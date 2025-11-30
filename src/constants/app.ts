@@ -1,4 +1,4 @@
-export const APP_VERSION = '1.0.5';
+export const APP_VERSION = '1.0.6-beta';
 export const APP_BASE_URL = (import.meta.env?.BASE_URL ?? '/').replace(/\/+$/, '/') || '/';
 export const LITTLEFS_WASM_ENTRY = `${APP_BASE_URL}wasm/littlefs/index.js`;
 export const FATFS_WASM_ENTRY = `${APP_BASE_URL}wasm/fatfs/index.js`;

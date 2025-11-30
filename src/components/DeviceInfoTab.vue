@@ -518,8 +518,8 @@ const featurePreview = computed(() => {
 .detail-card__item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px 18px;
+  align-items: flex-start;
+  gap: 10px 14px;
   padding: 12px 14px;
   border-radius: 14px;
   background: linear-gradient(135deg,
@@ -536,6 +536,8 @@ const featurePreview = computed(() => {
   color: color-mix(in srgb, var(--v-theme-on-surface) 80%, transparent);
   font-size: 0.87rem;
   letter-spacing: 0.01em;
+  line-height: 1.3;
+  flex-wrap: wrap;
 }
 
 .detail-card__item-label :deep(.v-icon) {
@@ -549,12 +551,15 @@ const featurePreview = computed(() => {
   color: color-mix(in srgb, var(--v-theme-on-surface) 98%, transparent);
   text-align: right;
   word-break: break-word;
+  white-space: normal;
+  line-height: 1.3;
 }
 
 .detail-card__value-with-icon {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
 }
 
 .detail-card__tooltip-icon {
@@ -575,6 +580,12 @@ const featurePreview = computed(() => {
 
   .detail-card__item-value {
     text-align: left;
+  }
+}
+
+@media (max-width: 720px) {
+  .detail-card__item {
+    grid-template-columns: 1fr;
   }
 }
 
