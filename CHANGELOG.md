@@ -1,4 +1,5 @@
 # Changelog
+## 1.0.7
 
 ## 1.0.6
 - Replaced esptool.js for [WebSerial_ESPTool](https://github.com/Jason2866/WebSerial_ESPTool/tree/development) by Jason2866
