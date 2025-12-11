@@ -136,6 +136,7 @@ export async function readEsp32S3Metadata(loader: Esp32S3Loader): Promise<Esp32S
       0: null,
       1: 'Embedded PSRAM 8MB',
       2: 'Embedded PSRAM 2MB',
+      3: "Embedded PSRAM present (8MB or more)"
     };
     const flashDesc = flashMap[flashCap ?? -1];
     const psramDesc = psramMap[psramCap ?? -1];
