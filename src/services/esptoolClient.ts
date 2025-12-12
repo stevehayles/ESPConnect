@@ -496,60 +496,46 @@ export function createEsptoolClient({
       const chipFamily =loader.getChipFamily();
 
       if (chipFamily === CHIP_FAMILY_ESP32S3) {
-        const meta = await readEsp32S3Metadata(loader);
-        return { ...meta, macAddress: undefined };
+        return await readEsp32S3Metadata(loader);
       }
       if (chipFamily === CHIP_FAMILY_ESP32S2) {
-        const meta = await readEsp32S2Metadata(loader);
-        return { ...meta, macAddress: undefined };
+        return await readEsp32S2Metadata(loader);
       }
       if (chipFamily === CHIP_FAMILY_ESP32C3) {
-        const meta = await readEsp32C3Metadata(loader);
-        return { ...meta, macAddress: undefined };
+        return await readEsp32C3Metadata(loader);
       }
       if (chipFamily === CHIP_FAMILY_ESP32) {
-        const meta = await readEsp32Metadata(loader);
-        return { ...meta, macAddress: undefined };
+        return await readEsp32Metadata(loader);
       }
       if (chipFamily === CHIP_FAMILY_ESP8266) {
-        const meta = await readEsp8266Metadata(loader);
-        return { ...meta, macAddress: undefined };
+        return await readEsp8266Metadata(loader);
       }
       if (chipFamily === CHIP_FAMILY_ESP32C2) {
-        const meta = await readEsp32C2Metadata(loader);
-        return { ...meta, macAddress: undefined };
+        return await readEsp32C2Metadata(loader);
       }
       if (chipFamily === CHIP_FAMILY_ESP32C5) {
-        const meta = await readEsp32C5Metadata(loader);
-        return { ...meta, macAddress: undefined };
+        return await readEsp32C5Metadata(loader);
       }
       if (chipFamily === CHIP_FAMILY_ESP32C6) {
-        const meta = await readEsp32C6Metadata(loader);
-        return { ...meta, macAddress: undefined };
+        return await readEsp32C6Metadata(loader);
       }
       if (chipFamily === CHIP_FAMILY_ESP32C61) {
-        const meta = await readEsp32C61Metadata(loader);
-        return { ...meta, macAddress: undefined };
+        return await readEsp32C61Metadata(loader);
       }
       if (chipFamily === CHIP_FAMILY_ESP32H2) {
-        const meta = await readEsp32H2Metadata(loader);
-        return { ...meta, macAddress: undefined };
+        return await readEsp32H2Metadata(loader);
       }
       if (chipFamily === CHIP_FAMILY_ESP32H4) {
-        const meta = await readEsp32H4Metadata(loader);
-        return { ...meta, macAddress: undefined };
+        return await readEsp32H4Metadata(loader);
       }
       if (chipFamily === CHIP_FAMILY_ESP32H21) {
-        const meta = await readEsp32H21Metadata(loader);
-        return { ...meta, macAddress: undefined };
+        return await readEsp32H21Metadata(loader);
       }
       if (chipFamily === CHIP_FAMILY_ESP32S31) {
-        const meta = await readEsp32S31Metadata(loader);
-        return { ...meta, macAddress: undefined };
+        return await readEsp32S31Metadata(loader);
       }
       if (chipFamily === CHIP_FAMILY_ESP32P4) {
-        const meta = await readEsp32P4Metadata(loader);
-        return { ...meta, macAddress: undefined };
+        return await readEsp32P4Metadata(loader);
       }
 
       return {
@@ -558,7 +544,7 @@ export function createEsptoolClient({
         crystalFreq: undefined,
         macAddress: undefined,
         pkgVersion: undefined,
-        chipRevision: (loader as any).chipRevision ?? undefined,
+        chipRevision:undefined,
         majorVersion: undefined,
         minorVersion: undefined,
         flashVendor: undefined,
