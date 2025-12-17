@@ -106,7 +106,6 @@ export class CompatibleTransport {
   device: SerialPort;
   baudrate: number;
   tracing: boolean;
-  private _reader: any;
   private readonly getLoader: () => CompatibleLoader | null;
   private readonly isBusy: BusyGetter;
 
