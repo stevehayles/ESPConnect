@@ -13,6 +13,8 @@ export type NvsValueType =
   | 'blob'
   | 'any';
 
+console.warn('[NVS] parser loaded - CRC FIX BUILD 2025-12-20');
+
 export type NvsDetectResult = { version: NvsVersion | 0; reason: string };
 
 export type NvsPageInfo = {
@@ -210,8 +212,10 @@ function compareRecency(a: Recency, b: Recency) {
 function isVariableLengthType(typeCode: number, version: NvsVersion) {
   if (typeCode === ITEM_TYPE.SZ) return true;
   if (version === 1) return typeCode === ITEM_TYPE.BLOB_LEGACY;
-  return typeCode === ITEM_TYPE.BLOB_LEGACY || typeCode === ITEM_TYPE.BLOB_DATA;
+  // v2: variable-length payloads live in BLOB_DATA entries (and SZ)
+  return typeCode === ITEM_TYPE.BLOB_DATA;
 }
+
 
 function mapTypeCodeToValueType(typeCode: number, version: NvsVersion): NvsValueType {
   switch (typeCode) {
@@ -410,7 +414,7 @@ function parseWithVersion(data: Uint8Array, version: NvsVersion): NvsParseResult
     seq = readUint32Le(view, 4);
     const versionByte = view.getUint8(8);
     const storedHeaderCrc = readUint32Le(view, 28);
-    const calcHeaderCrc = crc32Le(0xffffffff, page, 4, 24);
+    const calcHeaderCrc = nvsCrc32(page, 4, 24);
 
     if (state === PAGE_STATE.UNINITIALIZED) {
       headerCrcOk = true;
@@ -443,6 +447,10 @@ function parseWithVersion(data: Uint8Array, version: NvsVersion): NvsParseResult
       errors: pageErrors,
     });
 
+    if (headerCrcOk === false) {
+      // page is corrupt; don't trust its entry table or items
+      continue;
+    }
     if (page.length < ENTRY_DATA_OFFSET) {
       continue;
     }
@@ -491,6 +499,10 @@ function parseWithVersion(data: Uint8Array, version: NvsVersion): NvsParseResult
       const key = decodeKey(itemBytes.subarray(8, 24));
 
       const warningsForItem: string[] = [];
+      if (!key) {
+        warningsForItem.push('Empty key decoded; skipping entry.');
+        continue;
+      }
       if (!itemCrcOk) {
         warningsForItem.push(
           `Item CRC mismatch (stored 0x${storedItemCrc.toString(16)}, calc 0x${calcItemCrc.toString(16)}).`,
