@@ -110,6 +110,8 @@
             <v-select
               v-model="namespaceFilter"
               :items="namespaceFilterOptions"
+              item-title="title"
+              item-value="value"
               density="comfortable"
               label="Namespace"
               variant="outlined"
@@ -406,7 +408,14 @@ type NvsEntry = {
   warnings?: string[];
 };
 
+type NvsNamespaceInfo = {
+  id: number;
+  name: string;
+};
+
 type EntryStateLabel = 'EMPTY' | 'WRITTEN' | 'ERASED' | 'ILLEGAL';
+type NamespaceFilterValue = 'All' | number;
+type NamespaceFilterOption = { title: string; value: NamespaceFilterValue };
 
 type NvsPageEntryCounts = {
   written: number;
@@ -428,7 +437,7 @@ type NvsPage = {
 type NvsResult = {
   version: number;
   pages: NvsPage[];
-  namespaces: Array<unknown>;
+  namespaces: NvsNamespaceInfo[];
   entries: Array<NvsEntry>;
   warnings: string[];
   errors: string[];
@@ -548,7 +557,7 @@ function pageMapTooltip(page: NvsPage, counts: NvsPageEntryCounts | null) {
   return lines.join('\n');
 }
 
-const namespaceFilter = ref('All');
+const namespaceFilter = ref<NamespaceFilterValue>('All');
 const keyFilter = ref('');
 const typeFilter = ref('All');
 const valueFilter = ref('');
@@ -595,12 +604,31 @@ function unwrapItem(item: unknown) {
 }
 
 const namespaceFilterOptions = computed(() => {
-  const items = props.result?.entries ?? [];
-  const set = new Set<string>();
-  for (const entry of items) {
-    if (entry?.namespace) set.add(entry.namespace);
+  const byId = new Map<number, string>();
+
+  for (const ns of props.result?.namespaces ?? []) {
+    if (typeof ns?.id === 'number' && ns.name) byId.set(ns.id, ns.name);
   }
-  return ['All', ...Array.from(set).sort((a, b) => a.localeCompare(b))];
+
+  for (const entry of props.result?.entries ?? []) {
+    const nsIndex = entry.location?.nsIndex;
+    if (typeof nsIndex !== 'number') continue;
+    if (!byId.has(nsIndex) && entry.namespace) byId.set(nsIndex, entry.namespace);
+  }
+
+  const nameCounts = new Map<string, number>();
+  for (const name of byId.values()) {
+    nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
+  }
+
+  const items: NamespaceFilterOption[] = Array.from(byId.entries())
+    .sort(([aId, aName], [bId, bName]) => aName.localeCompare(bName) || aId - bId)
+    .map(([id, name]) => ({
+      value: id,
+      title: (nameCounts.get(name) ?? 0) > 1 ? `${name} (#${id})` : name,
+    }));
+
+  return [{ title: 'All', value: 'All' as const }, ...items];
 });
 
 const typeFilterOptions = computed(() => {
@@ -628,7 +656,7 @@ const filteredEntries = computed(() => {
       __key: `${entry.namespace}:${entry.key}:${entry.type}:${idx}`,
     }))
     .filter(entry => {
-      if (ns !== 'All' && entry.namespace !== ns) return false;
+      if (ns !== 'All' && entry.location?.nsIndex !== ns) return false;
       if (type !== 'All' && entry.type !== type) return false;
       if (key && !String(entry.key ?? '').toLowerCase().includes(key)) return false;
       if (value && !String(entry.valuePreview ?? '').toLowerCase().includes(value)) return false;
