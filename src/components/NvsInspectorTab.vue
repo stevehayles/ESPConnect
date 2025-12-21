@@ -6,7 +6,14 @@
 
     <v-card variant="tonal" prepend-icon="mdi-database-search">
       <template v-slot:title>
-        <span class="font-weight-black">NVS Inspector</span>
+        <div class="d-flex align-center gap-2 flex-wrap">
+          <span class="font-weight-black">NVS Inspector</span>
+          <v-tooltip text="Experimental feature: output may be incomplete or inaccurate." location="bottom">
+            <template #activator="{ props: tooltipProps }">
+              <v-chip v-bind="tooltipProps" color="warning" variant="tonal">Experimental</v-chip>
+            </template>
+          </v-tooltip>
+        </div>
       </template>
 
       <v-card-text class="d-flex flex-column gap-4">
