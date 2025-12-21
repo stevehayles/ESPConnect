@@ -224,7 +224,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { DataTableHeader } from 'vuetify';
 
 type PartitionOption = {
@@ -282,6 +282,23 @@ const emit = defineEmits<{
   (e: 'select-partition', value: number | string | null): void;
   (e: 'read-nvs'): void;
 }>();
+
+const autoReadRequested = ref(false);
+watch(
+  [() => props.partitions.length, () => props.loading, () => props.result],
+  ([partitionCount, loading, result]) => {
+    if (autoReadRequested.value) return;
+    if (loading) return;
+    if (result) {
+      autoReadRequested.value = true;
+      return;
+    }
+    if (partitionCount <= 0) return;
+    autoReadRequested.value = true;
+    emit('read-nvs');
+  },
+  { immediate: true },
+);
 
 const namespaceFilter = ref('All');
 const keyFilter = ref('');
