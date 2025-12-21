@@ -29,9 +29,34 @@
 
           <v-spacer />
 
-          <v-chip v-if="result" color="primary" size="large" variant="tonal">
-            {{ result.entries.length.toLocaleString() }} keys
-          </v-chip>
+          <div v-if="result" class="nvs-inspector__summary">
+            <v-chip size="small" variant="tonal" color="primary">
+              <v-icon start size="18">mdi-alpha-v-circle-outline</v-icon>
+              v{{ result.version }}
+            </v-chip>
+
+            <v-tooltip
+              :text="`${validPages.toLocaleString()} valid, ${invalidPages.toLocaleString()} invalid`"
+              location="bottom"
+            >
+              <template #activator="{ props: tooltipProps }">
+                <v-chip v-bind="tooltipProps" size="small" variant="tonal" color="secondary">
+                  <v-icon start size="18">mdi-book-open-page-variant</v-icon>
+                  {{ result.pages.length.toLocaleString() }} pages
+                </v-chip>
+              </template>
+            </v-tooltip>
+
+            <v-chip size="small" variant="tonal" color="secondary">
+              <v-icon start size="18">mdi-folder-key-outline</v-icon>
+              {{ result.namespaces.length.toLocaleString() }} namespaces
+            </v-chip>
+
+            <v-chip size="small" variant="tonal" color="secondary">
+              <v-icon start size="18">mdi-key-outline</v-icon>
+              {{ result.entries.length.toLocaleString() }} entries
+            </v-chip>
+          </div>
         </div>
 
         <v-progress-linear v-if="loading" height="10" indeterminate color="primary" rounded />
@@ -43,39 +68,6 @@
     </v-card>
 
     <div class="mt-6 d-flex flex-column gap-4">
-      <v-row v-if="result">
-        <v-col cols="12" sm="6" md="3">
-          <v-card variant="tonal" class="pa-4">
-            <div class="text-overline text-medium-emphasis">NVS Version</div>
-            <div class="text-h5 font-weight-black">v{{ result.version }}</div>
-          </v-card>
-        </v-col>
-
-        <v-col cols="12" sm="6" md="3">
-          <v-card variant="tonal" class="pa-4">
-            <div class="text-overline text-medium-emphasis">Pages</div>
-            <div class="text-h5 font-weight-black">{{ result.pages.length.toLocaleString() }}</div>
-            <div class="text-caption text-medium-emphasis">
-              {{ validPages.toLocaleString() }} valid · {{ invalidPages.toLocaleString() }} invalid
-            </div>
-          </v-card>
-        </v-col>
-
-        <v-col cols="12" sm="6" md="3">
-          <v-card variant="tonal" class="pa-4">
-            <div class="text-overline text-medium-emphasis">Namespaces</div>
-            <div class="text-h5 font-weight-black">{{ result.namespaces.length.toLocaleString() }}</div>
-          </v-card>
-        </v-col>
-
-        <v-col cols="12" sm="6" md="3">
-          <v-card variant="tonal" class="pa-4">
-            <div class="text-overline text-medium-emphasis">Entries</div>
-            <div class="text-h5 font-weight-black">{{ result.entries.length.toLocaleString() }}</div>
-          </v-card>
-        </v-col>
-      </v-row>
-
       <v-tabs v-model="activeTab" density="comfortable" color="primary">
         <v-tab value="keys">Keys</v-tab>
         <v-tab value="pages">Pages</v-tab>
@@ -262,8 +254,8 @@
                       <td><code>{{ page.index }}</code></td>
                       <td><code>{{ page.state }}</code></td>
                       <td class="text-end">
-                        <span v-if="true">{{ typeof page.seq === 'number' ? page.seq.toLocaleString() : '\u2014' }}</span>
-                        <span v-else class="text-medium-emphasis">—</span>
+                        <span v-if="typeof page.seq === 'number'">{{ page.seq.toLocaleString() }}</span>
+                        <span v-else class="text-medium-emphasis">&mdash;</span>
                       </td>
                       <td class="text-center">
                         <v-chip v-if="page.valid" size="small" color="success" variant="tonal">OK</v-chip>
@@ -456,7 +448,16 @@ const filteredEntries = computed(() => {
 .nvs-inspector__controls {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
+}
+
+.nvs-inspector__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .nvs-inspector__filters {
