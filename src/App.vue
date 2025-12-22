@@ -205,8 +205,8 @@
             <v-window-item value="console">
               <SerialMonitorTab :monitor-text="monitorText" :monitor-active="monitorActive"
                 :monitor-error="monitorError" :can-start="canStartMonitor" :can-command="canIssueMonitorCommands"
-                @start-monitor="startMonitor" @stop-monitor="stopMonitor()"
-                @clear-monitor="clearMonitorOutput" @reset-board="resetBoard" />
+                @start-monitor="startMonitor" @stop-monitor="stopMonitor()" @clear-monitor="clearMonitorOutput"
+                @reset-board="resetBoard" />
             </v-window-item>
 
             <v-window-item value="log">
@@ -4699,26 +4699,26 @@ const MIN_SEGMENT_PERCENT = 1; // ensure tiny partitions remain hoverable in the
 
 type PartitionMapSegment =
   | {
-      kind: 'unused';
-      key: string;
-      offset: number;
-      size: number;
-    }
+    kind: 'unused';
+    key: string;
+    offset: number;
+    size: number;
+  }
   | {
-      kind: 'reserved';
-      key: string;
-      offset: number;
-      size: number;
-      label: string;
-      color: string;
-    }
+    kind: 'reserved';
+    key: string;
+    offset: number;
+    size: number;
+    label: string;
+    color: string;
+  }
   | {
-      kind: 'partition';
-      key: string;
-      offset: number;
-      size: number;
-      entry: PartitionTableEntry;
-    };
+    kind: 'partition';
+    key: string;
+    offset: number;
+    size: number;
+    entry: PartitionTableEntry;
+  };
 
 const partitionSegments = computed<PartitionSegment[]>(() => {
   if (!connected.value) {
@@ -5436,6 +5436,7 @@ async function stopMonitor(options: StopMonitorOptions = {}) {
 
   busy.value = true;
   maintenanceReturnInProgress.value = true;
+  appendLog('Returning to maintenance mode.', '[ESPConnect-ui]');
   connectDialog.label = 'Returning to maintenance mode...';
   connectDialog.message = 'Re-entering ROM bootloader...';
   connectDialog.visible = true;
@@ -5583,8 +5584,8 @@ async function connect() {
     const usbBridge = portDetails ? formatUsbBridge(portDetails) : "Unknown";
     const bridge =
       portDetails &&
-      typeof portDetails.usbVendorId === 'number' &&
-      typeof portDetails.usbProductId === 'number'
+        typeof portDetails.usbVendorId === 'number' &&
+        typeof portDetails.usbProductId === 'number'
         ? getUsbDeviceInfo(portDetails.usbVendorId, portDetails.usbProductId)
         : undefined;
 
