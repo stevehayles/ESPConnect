@@ -2969,10 +2969,11 @@ async function handleSpiffsRestore(file: File | null) {
     spiffsState.status = `Restore file must be exactly ${formatBytes(partition.size) ?? `${partition.size} bytes`}.`;
     return;
   }
+  const fileLabel = file.name ? `"${file.name}"` : 'the selected image';
   const confirmed = await showConfirmation({
     title: 'Restore SPIFFS Partition',
     message:
-      'This will overwrite the entire SPIFFS partition with the selected image. Continue?',
+      `This will overwrite the entire SPIFFS partition with ${fileLabel}. Continue?`,
     confirmText: 'Restore',
     destructive: true,
   });
