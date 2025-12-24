@@ -58,6 +58,17 @@ jobs:
       - name: Build Vite application
         run: npm run build
 
+      - name: Package web dist for release
+        if: matrix.platform == 'linux'
+        run: zip -r dist.zip dist
+      - name: Upload dist artifact
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist.zip
+          retention-days: 5
+
       - name: Build Electron app
         run: npm run make -- --arch=${{ matrix.arch }}
         env:
@@ -140,7 +151,7 @@ jobs:
             | macOS | Intel | `.dmg` | macOS 10.13+ |
             | Windows | x64 | `.exe` installer | Windows 10+ |
             | Linux | x64 | `.deb` / `.rpm` | Ubuntu, Debian, Fedora, etc. |
-            
+            | Web UI | Any | `.zip` | Static `dist/` build for custom hosting |
             ### 📝 Installation
             
             **macOS Apple Silicon:**
@@ -167,6 +178,12 @@ jobs:
             ```bash
             sudo rpm -i espconnect-${{ steps.version.outputs.VERSION }}.x86_64.rpm
             ```
+
+            **Web UI (static files):**
+            ```bash
+            curl -L -o dist.zip "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/dist.zip"
+            unzip dist.zip -d dist
+            ```
             
             ### 🔌 USB Serial Permissions (Linux)
             
@@ -182,5 +199,6 @@ jobs:
             artifacts/**/*.exe
             artifacts/**/*.deb
             artifacts/**/*.rpm
+            artifacts/dist.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

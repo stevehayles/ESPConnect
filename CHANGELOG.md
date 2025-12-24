@@ -8,6 +8,7 @@
 
 ### Internal
 - Remove unused legacy code that was needed for esptool-js
+- CI now zips the built dist/ directory, uploads it, and includes it in release downloads so the static web bundle can be grab directly
 ## 1.1.1
 
 ### Fixed
