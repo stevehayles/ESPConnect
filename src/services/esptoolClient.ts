@@ -71,7 +71,6 @@ export interface EsptoolClient {
   loader: CompatibleLoader;
   transport: CompatibleTransport;
   connectAndHandshake: () => Promise<ConnectHandshakeResult>;
-  readPartitionTable: (offset?: number, length?: number) => Promise<any[]>;
   readChipMetadata: () => Promise<ChipMetadata>;
 }
 
@@ -438,7 +437,6 @@ export function createEsptoolClient({
     loader: loaderProxy,
     transport,
     connectAndHandshake,
-    readPartitionTable,
     readChipMetadata,
   };
 
