@@ -298,13 +298,12 @@ export function createEsptoolClient({
 
   async function syncWithStub(): Promise<void> {
     try {
-      status('Finishing operation...');
+      status('Reconnect and sync with the stub');
       await loader.reconnect();
     } catch (e) {
-      // Fallback: your reconnect() already does hardReset(true) + sync + runStub(true)
-      // But reconnect() returns void and mutates internal state; we still want to ensure
-      // "loader" is the decorated stub afterwards.
+
       console.error("Reconnect");
+      console.error(e);
     } finally {
       setBusy(false);
     }

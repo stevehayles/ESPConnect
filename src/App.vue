@@ -3449,6 +3449,16 @@ async function writeFilesystemImage(partition: any, image: Uint8Array, options: 
     partition.offset,
     compress
   );
+  const finishingLabel = `Finalizing ${label}...`;
+  if (state) {
+    state.status = finishingLabel;
+  }
+  onProgress?.({
+    value: 100,
+    label: finishingLabel,
+    written: image.length,
+    total: image.length,
+  });
   await esptoolClient.value?.syncWithStub();
 }
 
