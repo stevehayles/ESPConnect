@@ -4,6 +4,9 @@
 ### Improvement
 - Session log now shows the version of tasmota-webserial-esptool package along with a timestamp
 
+### Internal
+- Failed detection of flashid is now non-fatal
+
 ## 1.1.2
 ### Improvement
 - Internationalization: Migrated UI translations to the standard Vue I18n + Vuetify integration.
