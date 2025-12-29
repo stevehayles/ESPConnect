@@ -1,4 +1,4 @@
-export const APP_VERSION = '1.1.3-preview-5';
+export const APP_VERSION = '1.1.3-preview-6';
 
 export const APP_IMAGE_HEADER_MAGIC = 0xe9;
 export const APP_DESCRIPTOR_MAGIC = 0xabcd5432;
