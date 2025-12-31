@@ -34,8 +34,8 @@ body:
   - type: textarea
     id: session_log
     attributes:
-      label: "Session log (required)"
-      description: "Paste the full content of the Session Log tab."
+      label: "ESPConnect Session log (required)"
+      description: "Reproduce the issue and paste the full content of the Session Log tab in ESPConnect."
       render: "shell"
     validations:
       required: true
