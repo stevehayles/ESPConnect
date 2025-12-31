@@ -22,20 +22,6 @@ body:
       description: "Short, clear description of the issue."
     validations:
       required: true
-  - type: textarea
-    id: steps
-    attributes:
-      label: "Steps to reproduce (for bugs)"
-      description: "List the minimal steps to reproduce the problem."
-      placeholder: "1. ...\n2. ...\n3. ..."
-  - type: textarea
-    id: expected
-    attributes:
-      label: "Expected behavior"
-  - type: textarea
-    id: actual
-    attributes:
-      label: "Actual behavior"
   - type: input
     id: app_version
     attributes:
@@ -50,17 +36,6 @@ body:
         - "macOS"
         - "Linux"
         - "Other"
-  - type: input
-    id: device
-    attributes:
-      label: "Device/board"
-      description: "Board model or USB device used, if applicable."
-  - type: textarea
-    id: logs
-    attributes:
-      label: "Logs or screenshots"
-      description: "Paste logs, stack traces, or attach screenshots."
-      render: "shell"
   - type: textarea
     id: session_log
     attributes:
