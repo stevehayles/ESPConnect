@@ -19,11 +19,30 @@ function normalizeLocale(value: unknown): SupportedLocale {
     : 'en';
 }
 
-function readStoredLocale(): SupportedLocale {
-  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+function getBrowserLocale(): SupportedLocale {
+  if (typeof navigator === 'undefined') {
     return 'en';
   }
-  return normalizeLocale(window.localStorage.getItem(STORAGE_KEY));
+
+  const locales = navigator.languages?.length ? navigator.languages : [navigator.language];
+  for (const locale of locales) {
+    const lang = locale.substring(0, 2).toLowerCase();
+    if (supportedLocales.includes(lang as SupportedLocale)) {
+      return lang as SupportedLocale;
+    }
+  }
+
+  return 'en';
+}
+
+function readStoredLocale(): SupportedLocale {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      return normalizeLocale(stored);
+    }
+  }
+  return getBrowserLocale();
 }
 
 const locale = readStoredLocale();
