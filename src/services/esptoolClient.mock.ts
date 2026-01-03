@@ -31,6 +31,9 @@ type MockLoader = {
   readRegister: (address: number) => Promise<number>;
   writeRegister: (address: number, value: number) => Promise<void>;
   reconnect: () => Promise<void>;
+  setBaudrate: (baud: number) => Promise<void>;
+  sleep: (ms: number) => Promise<void>;
+  hardReset: (toStub?: boolean) => Promise<void>;
 };
 
 export class CompatibleTransport {
@@ -58,7 +61,7 @@ export class CompatibleTransport {
     }
   }
 
-  async *rawRead(_signal?: AbortSignal) {
+  async *rawRead(signal?: AbortSignal) {
     const encoder = new TextEncoder();
     const chunks = [
       '[ESPConnect] Mock serial: booting...\n',
@@ -67,6 +70,9 @@ export class CompatibleTransport {
     ];
     for (const chunk of chunks) {
       yield encoder.encode(chunk);
+    }
+    while (!signal?.aborted) {
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
   }
 }
@@ -117,6 +123,15 @@ export function createEsptoolClient(options: EsptoolOptions): EsptoolClient {
       return;
     },
     reconnect: async () => {
+      return;
+    },
+    setBaudrate: async () => {
+      return;
+    },
+    sleep: async () => {
+      return;
+    },
+    hardReset: async () => {
       return;
     },
   };
