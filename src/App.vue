@@ -9,22 +9,24 @@
         <v-list-subheader class="app-drawer__label text-overline text-medium-emphasis">
           {{ t('app.sectionsLabel') }}
         </v-list-subheader>
-        <v-list-item v-for="item in navigationItems" :key="item.value" :value="item.value" :prepend-icon="item.icon"
+        <v-list-item v-for="item in visibleNavigationItems" :key="item.value" :value="item.value" :prepend-icon="item.icon"
           :active="activeTab === item.value" :disabled="item.disabled" class="app-drawer__list-item" rounded="lg"
           @click="!item.disabled && (activeTab = item.value)">
           <v-list-item-title>{{ item.title }}</v-list-item-title>
         </v-list-item>
       </v-list>
-      <v-divider class="app-drawer__divider" />
-      <v-list density="comfortable">
-        <v-list-subheader class="app-drawer__label text-overline text-medium-emphasis">
-          {{ t('app.resourcesLabel') }}
-        </v-list-subheader>
-        <v-list-item v-for="link in resourceLinks" :key="link.href" :href="link.href" :prepend-icon="link.icon"
-          target="_blank" rel="noopener" class="app-drawer__list-item" rounded="lg">
-          <v-list-item-title>{{ link.title }}</v-list-item-title>
-        </v-list-item>
-      </v-list>
+      <template v-if="hasVisibleResourceLinks">
+        <v-divider class="app-drawer__divider" />
+        <v-list density="comfortable">
+          <v-list-subheader class="app-drawer__label text-overline text-medium-emphasis">
+            {{ t('app.resourcesLabel') }}
+          </v-list-subheader>
+          <v-list-item v-for="link in visibleResourceLinks" :key="link.href" :href="link.href" :prepend-icon="link.icon"
+            target="_blank" rel="noopener" class="app-drawer__list-item" rounded="lg">
+            <v-list-item-title>{{ link.title }}</v-list-item-title>
+          </v-list-item>
+        </v-list>
+      </template> 
     </v-navigation-drawer>
     <v-app-bar app :elevation="8">
       <div class="status-actions">
@@ -732,7 +734,19 @@ type PartitionTableEntry = {
   detectedFilesystem?: string;
 };
 type FilesystemPartition = { id: number; label: string; offset: number; size: number; sizeText: string };
-
+type NavigationItem = {
+  title: string;
+  value: string;
+  icon: string;
+  disabled?: boolean;
+  hidden?: boolean;
+};
+type ResourceLink = {
+  title: string;
+  href: string;
+  icon: string;
+  hidden?: boolean;
+}
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -4192,7 +4206,13 @@ const partitionFlashSizeLabel = computed(() => chipDetails.value?.flashSize ?? n
 const partitionTable = ref<PartitionTableEntry[]>([]);
 const activeTab = ref('info');
 const sessionLogRef = ref<SessionLogTabRef | null>(null);
-const navigationItems = computed(() => [
+const hasVisibleNavigationItems = computed(() =>
+  visibleNavigationItems.value.length > 0
+)
+const visibleNavigationItems = computed(() =>
+  navigationItems.value.filter(item => !item.hidden)
+)
+const navigationItems = computed<NavigationItem[]>(() => [
   { title: t('navigation.deviceInfo'), value: 'info', icon: 'mdi-information-outline', disabled: false },
   { title: t('navigation.partitions'), value: 'partitions', icon: 'mdi-table', disabled: !connected.value },
   {
@@ -4214,6 +4234,7 @@ const navigationItems = computed(() => [
     icon: 'mdi-folder-wrench',
     disabled:
       !connected.value || !spiffsAvailable.value || maintenanceNavigationLocked.value,
+    hidden: true,
   },
   {
     title: t('navigation.littlefs'),
@@ -4228,6 +4249,7 @@ const navigationItems = computed(() => [
     icon: 'mdi-alpha-f-circle-outline',
     disabled:
       !connected.value || !fatfsAvailable.value || maintenanceNavigationLocked.value,
+    hidden: true,
   },
   {
     title: t('navigation.flash'),
@@ -4242,6 +4264,7 @@ const navigationItems = computed(() => [
     value: 'about',
     icon: 'mdi-information-box-outline',
     disabled: false,
+    hidden: true,
   },
 ]);
 
@@ -4253,22 +4276,30 @@ watch(
     }
   }
 );
-
-const resourceLinks = computed(() => [
+const hasVisibleResourceLinks = computed(() =>
+  visibleResourceLinks.value.length > 0
+)
+const visibleResourceLinks = computed(() =>
+  resourceLinks.value.filter(item => !item.hidden)
+)
+const resourceLinks = computed<ResourceLink[]>(() => [
   {
     title: t('resources.tutorial'),
     href: 'https://youtu.be/-nhDKzBxHiI',
     icon: 'mdi-youtube',
+    hidden: true,
   },
   {
     title: t('resources.buyCoffee'),
     href: 'https://buymeacoffee.com/thelastoutpostworkshop',
     icon: 'mdi-coffee',
+    hidden: true,
   },
   {
     title: t('resources.getHelp'),
     href: 'https://github.com/thelastoutpostworkshop/ESPConnect',
     icon: 'mdi-lifebuoy',
+    hidden: true,
   },
 ]);
 const flashSizeBytes = ref<number | null>(null);
